@@ -92,7 +92,7 @@ def format_row(inst=None):
     the source of the overall screen width.
     """
     if inst:
-        inst_id = inst['r'].id
+        inst_id = inst['i'].id
         project = inst['r'].owner_id
         state = inst['i'].state
         ip = inst['i'].private_dns_name
