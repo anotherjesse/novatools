@@ -1,0 +1,185 @@
+#!/usr/bin/env python
+
+import curses
+import sys
+from euca2ools import Euca2ool
+from itertools import count
+
+__version__ = "0.1"
+
+instances = {} # master instance list
+selected_instance = None # ID of currently selected instance
+screen_delay = .1 # seconds between screen updates
+update_delay = 2 # seconds between instance list updates
+tick = -1 # internal counter incremented in main event loop
+title = "nova top"
+instructions = """(t)erminate instance | console (o)utput
+(q)uit
+up/down changes selection
+"""
+no_instances = "Aww, no instances are running!!"
+screen_width = None
+foreground_colour = curses.COLOR_GREEN
+background_colour = curses.COLOR_BLACK
+
+def move_selection(reverse=False):
+    """
+    Goes through the list of instances, setting the selected as the one after
+    the currently selected.
+    """
+    global selected_instance
+    if selected_instance not in instances:
+        selected_instance = None
+    found = False
+    pids = sorted(instances.keys(), reverse=reverse)
+    # Iterate items twice to enable wrapping.
+    for pid in pids + pids:
+        if selected_instance is None or found:
+            selected_instance = pid
+            return
+        found = pid == selected_instance
+
+def update_instances():
+    """
+    Updates the dict of instances.
+    """
+
+    global instances
+
+    global tick
+    tick += 1
+    if (tick * screen_delay) % update_delay != 0:
+        return
+    tick = 0
+
+    reservations = euca_conn.get_all_instances([])
+
+    instances = {}
+    for resv in reservations:
+        for inst in resv.instances:
+            instances[inst.id] = {'i': inst, 'r': resv}
+
+def handle_keypress(screen):
+    """
+    Check for a key being pressed and handle it if applicable.
+    """
+    global selected_instance
+    global selected_instance
+    try:
+        key = screen.getkey().upper()
+    except:
+        return
+    if key in ("KEY_DOWN", "J"):
+        move_selection()
+    elif key in ("KEY_UP", "K"):
+        move_selection(reverse=True)
+    elif key in ("O",):
+        if selected_instance in instances:
+            result = euca_conn.get_console_output(selected_instance)
+            # FIXME: use a pad and let the user scroll through the output
+            print result.output
+    elif key in ("T",):
+        if selected_instance in instances:
+            euca_conn.terminate_instances([selected_instance])
+            tick = 0
+            move_selection()
+    elif key in ("Q",):
+        raise KeyboardInterrupt
+
+def format_row(inst=None):
+    """
+    Applies consistant padding to each of the columns in a row and serves as
+    the source of the overall screen width.
+    """
+    if inst:
+        inst_id = inst['r'].id
+        project = inst['r'].owner_id
+        state = inst['i'].state
+        ip = inst['i'].private_dns_name
+        size = inst['i'].instance_type
+    else:
+        inst_id = 'ID'
+        project = 'PROJECT'
+        state = 'STATE'
+        ip = 'IP'
+        size = 'SIZE'
+    row = " %-10s %-20s %-10s %-20s %-12s " % (inst_id, project, state, ip, size)
+    global screen_width
+    if screen_width is None:
+        screen_width = len(row)
+    return row
+
+def display_output(screen):
+    """
+    Display the menu list of instances.
+    """
+    format_row() # Sets up the screen width.
+    screen_height = len(instances) + len(instructions.split("\n")) + 9
+    if not instances:
+        screen_height += 2 # A couple of blank lines are added when empty.
+    screen.erase()
+    win = curses.newwin(screen_height, screen_width + 6, 1, 3)
+    win.bkgd(" ", curses.color_pair(1))
+    win.border()
+    x = 3
+    blank_line = y = count(2).next
+    win.addstr(y(), x, title.center(screen_width), curses.A_NORMAL)
+    blank_line()
+    win.addstr(y(), x, format_row(), curses.A_STANDOUT)
+    if not instances:
+        blank_line()
+        win.addstr(y(), x, no_instances.center(screen_width), curses.A_NORMAL)
+        blank_line()
+    else:
+        win.hline(y(), x, curses.ACS_HLINE, screen_width)
+        for (i, pid) in enumerate(sorted(instances.keys())):
+            if pid != selected_instance:
+                attr = curses.A_NORMAL
+            else:
+                attr = curses.A_STANDOUT
+            win.addstr(y(), x, format_row(instances[pid]), attr)
+    win.hline(y(), x, curses.ACS_HLINE, screen_width)
+    blank_line()
+    for line in instructions.split("\n"):
+        win.addstr(y(), x, line.center(screen_width), curses.A_NORMAL)
+    win.refresh()
+
+def main():
+    """
+    Main entry point for nova top.
+    """
+    try:
+        euca = Euca2ool()
+        global euca_conn
+        euca_conn = euca.make_connection()
+    except:
+        print "environment variables not configured"
+        sys.exit(1)
+
+    stdscr = curses.initscr()
+    curses.start_color()
+    curses.init_pair(1, foreground_colour, background_colour)
+    curses.noecho()
+    stdscr.keypad(True)
+    stdscr.nodelay(True)
+    try:
+        curses.curs_set(False)
+    except:
+        pass
+    try:
+        while True:
+            try:
+                update_instances()
+                handle_keypress(stdscr)
+                display_output(stdscr)
+                curses.napms(int(screen_delay * 1000))
+            except KeyboardInterrupt:
+                break
+    finally:
+        curses.nocbreak()
+        stdscr.keypad(False)
+        curses.echo()
+        curses.endwin()
+
+if __name__ == "__main__":
+    main()
