@@ -1,0 +1,66 @@
+#!/usr/bin/env python
+
+import sys
+import time
+import random
+from euca2ools import Euca2ool
+
+euca_conn = None
+
+def instances():
+    rval = []
+    for r in euca_conn.get_all_instances([]):
+        for i in r.instances:
+            rval.append(i)
+    return rval
+
+
+max_instance_count = 50
+max_launch_count = 10
+error_launch_time = 60
+
+launch_times = {}
+
+def main():
+    try:
+        euca = Euca2ool()
+        global euca_conn
+        euca_conn = euca.make_connection()
+    except:
+        print "environment variables not configured"
+        sys.exit(1)
+
+    loop = 0
+    while True:
+        insts = instances()
+
+        # terminate running instances and check on launched instances
+        for i in insts:
+            if i.state == 'shutdown':
+                if launch_times.has_key(i.id):
+                    host = i.key_name.split(',')[-1].split(')')[0]
+                    print "%s,%s,%s, FAIL" % (launch_times[i.id], i.id, host)
+                    del launch_times[i.id]
+                euca_conn.terminate_instances([i.id])
+            if i.state == 'running':
+                if launch_times.has_key(i.id):
+                    host = i.key_name.split(',')[-1].split(')')[0]
+                    print '%s,%s,%s, %d' % (launch_times[i.id], i.id, host, time.time()-launch_times[i.id])
+                    del launch_times[i.id]
+                euca_conn.terminate_instances([i.id])
+
+        # launching new instances
+        launch_count = min(random.randint(0, max_instance_count-len(insts)), max_launch_count)
+        if launch_count > 0:
+            r = euca_conn.run_instances(image_id="ami-tiny",
+                                        min_count=launch_count,
+                                        max_count=launch_count)
+            assert(len(r.instances) == launch_count)
+            for i in r.instances:
+                launch_times[i.id] = time.time()
+
+        time.sleep(1)
+
+
+if __name__ == "__main__":
+    main()

@@ -96,14 +96,16 @@ def format_row(inst=None):
         project = inst['r'].owner_id
         state = inst['i'].state
         ip = inst['i'].private_dns_name
+        host = inst['i'].key_name.split(" ")[-1].split(")")[0]
         size = inst['i'].instance_type
     else:
         inst_id = 'ID'
         project = 'PROJECT'
         state = 'STATE'
         ip = 'IP'
+        host = 'HOST'
         size = 'SIZE'
-    row = " %-10s %-20s %-10s %-20s %-12s " % (inst_id, project, state, ip, size)
+    row = " %-10s %-20s %-20s %-10s %-12s " % (inst_id, project, state, host, size)
     global screen_width
     if screen_width is None:
         screen_width = len(row)
